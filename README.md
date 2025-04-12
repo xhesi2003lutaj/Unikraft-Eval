@@ -24,4 +24,10 @@ Then export the environment variable so kraft knows where to find it:
 
 The goal of this project is to investigate the performance of applications running on the Unikraft unikernel. The project involves selecting applications of varying code complexities and functionalities (e.g., web servers, machine learning inference models, or network utilities), adapt them to run on the Unikraft unikernel, and evaluate their performance and the usability of Unikraft compared to traditional operating system environments.The performance metrics should include startup time, memory footprint, and execution speed for each application. For usability analysis, emphasis should be on handling system calls, I/O, and network communication and the porting effort. In addition, any challenges encountered during this analysis are documented along with resolution strategies.
 
+## Aimed apps for testing
+    1- Nginx  natively build and with kraft
+    2- Hugo 
+    3- C/C++ application
+    4- Redis
+    5- Memcached
 
