@@ -10,7 +10,8 @@ Kraft Unikraft is an open-source Unikernel Development Kit, not a food product. 
 
 ### Setting up your environment for using the companion tool Kraft.
 After installing kraft, you need to make sure you have also Docker installed and running on your machine in order to use Kraftkit, because Kraft utilizes Docker    
-and BuildKit to generate the root filesystem needed for the unikernel.
+and BuildKit to generate the root filesystem needed for the unikernel.The kraft command-line tool relies on the Docker/OCI container environment to build and package the unikernel, making Docker a core requirement. 
+
 To not encounter issues when KraftKit tries to access a running BuildKit instance in the process of building the root filesystem do:
 
         1. docker run --rm -d --name buildkit --privileged moby/buildkit:v0.20.0

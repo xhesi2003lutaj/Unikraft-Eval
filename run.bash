@@ -1,14 +1,18 @@
 # Manual creation of the image
 # kraft build ~= qemu with application apecific command arguments
-# builds the filesystem specific to the appliation through a Dockerfile
-# configures the kernel through the specifications on the Kraftfile
-	# pulls the required libraries/repositories
-	# configures these libraries
-# complies the repostories 
-# result: a kernel image that embeds the filesystem
+	# builds the filesystem specific to the appliation through a Dockerfile
+	# configures the kernel through the specifications on the Kraftfile
+		# pulls the required libraries/repositories
+		# configures these libraries
+	# complies the repostories 
+	# result: a kernel image that embeds the filesystem
+# kraft run
+	# start qemu with the kernel image generated above and the command from the Kraftfile : cmd:['/usr'] 
+
 
 kraft build --plat qemu --arch x86_64 .
-kraft run port --plat qemu --arch x86_64
+kraft run port --plat qemu --arch x86_64.
+kraft run --log-level debug --log-type basic -p port ...
 
 
 # kraft run -p  --plat  --arch //using the pulled image  
