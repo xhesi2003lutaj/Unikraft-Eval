@@ -29,6 +29,16 @@ The goal of this project is to investigate the performance of applications runni
     1- Nginx  natively build and with kraft
     2- Hugo 
     3- C/C++ application
-    4- Redis
+    4- Redis, the image pulled from the cloud has an issue with threading, build natively cannot initialize the ELF parse => test with docker 
     5- Memcached
 
+## Setting up environment for running benchmarks on Linux
+### Memcached (If memtier_benchmark not is not available directly by default on your Linux distribution)
+        1- sudo apt update
+        2- sudo apt install build-essential autoconf automake libtool pkg-config libevent-dev git
+        3- git clone https://github.com/RedisLabs/memtier_benchmark.git
+        4- cd memtier_benchmark
+        5- autoreconf -ivf
+        6- ./configure
+        7- make
+        8- sudo make install
