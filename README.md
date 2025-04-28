@@ -33,7 +33,7 @@ The goal of this project is to investigate the performance of applications runni
     5- Memcached
 
 ## Setting up environment for running benchmarks on Linux
-### Memcached (If memtier_benchmark not is not available directly by default on your Linux distribution)
+### Memcached (If memtier_benchmark is not available by default on your Linux distribution)
         1- sudo apt update
         2- sudo apt install build-essential autoconf automake libtool pkg-config libevent-dev git
         3- git clone https://github.com/RedisLabs/memtier_benchmark.git

@@ -31,7 +31,7 @@ def find_qemu_proc_by_port(port="8080"):
     return None
 
 def wait_for_nginx_ready(host="127.0.0.1", port=8080, timeout=30):
-    """Wait for NGINX to become ready by checking port 8080."""
+    """waiting for NGinx to become ready by checking port 8080."""
     start = time.time()
     while time.time() - start < timeout:
         try:
@@ -106,7 +106,7 @@ def run_and_monitor_nginx():
     )
 
     buffered_print("Waiting for QEMU to start...")
-    time.sleep(3)  # Give QEMU time to spawn
+    time.sleep(3)  # giving QEMU time to spawn
 
     qemu_proc = find_qemu_proc_by_port("8080")
     if not qemu_proc:
