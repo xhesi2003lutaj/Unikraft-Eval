@@ -2,146 +2,166 @@ import subprocess
 import psutil
 import time
 import os
-import signal
 import csv
+import socket
+import threading
+import signal
 
 LOG_DIR = "metrics"
 os.makedirs(LOG_DIR, exist_ok=True)
-LOG_FILE = os.path.join(LOG_DIR, "unikraft_memcached_metrics.csv")
+METRICS_FILE = os.path.join(LOG_DIR, "unikraft_memcached_metrics.csv")
 TEED_LOG_FILE = os.path.join(LOG_DIR, "memcached_full_output.log")
-# Add at the top
+CPU_LOG_FILE = os.path.join(LOG_DIR, "cpu_usage_unikraft.log")
+
+start_time = None  
 full_log_lines = []
 
 def buffered_print(message):
     print(message)
     full_log_lines.append(message)
 
-def tee_print(message):
-    print(message)
+def tee_print_all():
     with open(TEED_LOG_FILE, "a") as f:
-        f.write(message + "\n")
+        for line in full_log_lines:
+            f.write(line + "\n")
 
-def find_qemu_proc_by_port(port="8080"):
-    for proc in psutil.process_iter(['pid', 'cmdline']):
-        try:
-            if proc.name().startswith("qemu-system") and any(f"hostfwd=tcp::{port}-" in arg for arg in proc.cmdline()):
-                return proc
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            continue
-    return None
-
-def find_qemu_proc(timeout=10):
-    qemu_proc = None
+def find_qemu_proc_by_port(port="11211", timeout=10):
     deadline = time.time() + timeout
-    while time.time() < deadline: # HOw long the fs. should wait to find the qemu process
-        for proc in psutil.process_iter(['pid', 'name', 'cmdline']): # iterating over currently running processes
+    while time.time() < deadline:
+        for proc in psutil.process_iter(['pid', 'cmdline']):
             try:
-                if 'qemu-system-x86_64' in proc.info['name']:
-                    # Optionally filter further based on command line args
-                    if any('memcached' in arg or '.img' in arg for arg in proc.info['cmdline']): # Making sure the qemu process is the one initiated by kraft
-                        print("e gjeti qemu")
-                        return proc
+                if proc.name().startswith("qemu-system") and any(f"hostfwd=tcp::{port}-" in arg for arg in proc.cmdline()):
+                    print("QEMU process found")
+                    return proc
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 continue
-        time.sleep(0.5)
-    raise RuntimeError("QEMU process not found within timeout.")
+        time.sleep(0.1)
+    return None
 
-def monitor_process(proc, start_time, nginx_ready_trigger="interface is up"):
-    """Monitoring the QEMU process and looking for nginx logs"""
+def wait_for_memcached_ready(host="127.0.0.1", port=11211, timeout=15):
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            with socket.create_connection((host, port), timeout=0.5):
+                return time.time()
+        except (OSError, ConnectionRefusedError):
+            time.sleep(0.1)
+    return None
 
-    log_lines = []
-    csv_rows = []
-    nginx_started = None
-    nginx_stopped = None
+def monitor_resource_usage_live(proc, usage_log, stop_event, interval=5):
+    proc.cpu_percent(interval=None)  # warm-up call
+    log_lines = ["Time Elapsed,CPU (%),Memory (KB)\n"]
+    while not stop_event.is_set() and proc.is_running():
+        cpu = proc.cpu_percent(interval=interval)
+        mem = proc.memory_info().rss // 1024
+        elapsed = round(time.time() - start_time, 2)
+        log_lines.append(f"{elapsed},{cpu},{mem}\n")
+        usage_log.append((elapsed, cpu, mem))
+    try:
+        with open(CPU_LOG_FILE, "w") as cpu_log:
+            cpu_log.writelines(log_lines)
+    except Exception as e:
+        print(f"Failed to write CPU log: {e}")
+
+def run_and_monitor_memcached():
+    global start_time
+    kraft_proc = None
+    qemu_proc = None
+    usage_log = []
+    startup_time = None
+    stop_event = threading.Event()
+    end_time = None
+    monitor_thread = None  
+
+    def cleanup(signum=None, frame=None):
+        nonlocal end_time
+        buffered_print("Interrupt signal received, cleaning up")
+        stop_event.set()
+
+        if kraft_proc:
+            try:
+                kraft_proc.terminate()
+                kraft_proc.wait(timeout=5)
+            except Exception:
+                pass
+
+        if monitor_thread and monitor_thread.is_alive():
+            buffered_print("Waiting for monitor thread to finish")
+            monitor_thread.join(timeout=10)
+
+        end_time = time.time()
+
+        file_exists = os.path.exists(METRICS_FILE)
+        with open(METRICS_FILE, "a", newline="") as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow(["Time (s)", "CPU Usage (%)", "Memory Usage (KB)"])
+            if startup_time is not None and isinstance(startup_time, float):
+                for t, cpu, mem in usage_log:
+                    writer.writerow([t, cpu, mem])
+
+        tee_print_all()
+        qemu_duration = round(end_time - qemu_start, 3) if qemu_proc else 0
+        total_duration = round(end_time - kraft_start, 3)
+        buffered_print(f"QEMU total duration: {qemu_duration}s")
+        buffered_print(f"Total runtime: {total_duration}s")
+        if usage_log:
+            cpu_avg = round(sum(cpu for _, cpu, _ in usage_log) / len(usage_log), 2)
+            mem_avg = round(sum(mem for _, _, mem in usage_log) / len(usage_log), 2)
+            buffered_print(f"Avg CPU: {cpu_avg}%")
+            buffered_print(f"Avg Memory: {mem_avg} KB")
+        exit(0)
+
+    signal.signal(signal.SIGINT, cleanup)
+    signal.signal(signal.SIGTERM, cleanup)
 
     try:
-        for line in iter(proc.stdout.readline, b''): # more can be retrieved than only the start of nginx, because I am runnig kraft in debug mode
-            decoded = line.decode("utf-8", errors="ignore").strip()
-            log_lines.append(decoded)
-            now = time.time()
-            elapsed = round(now - start_time, 3)
+        print("Starting Unikraft unikernel for Memcached")
+        kraft_start = time.time()
+        kraft_proc = subprocess.Popen(
+            ["kraft", "run", "--log-level", "debug", "--log-type", "basic", "-p", "11211:11211", "--plat", "qemu", "--arch", "x86_64", "."],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            bufsize=1
+        )
 
-            if nginx_ready_trigger.lower() in decoded.lower() and nginx_started is None:
-                nginx_started = now
-                buffered_print(f"NGINX Started at +{elapsed:.2f}s: {decoded}")
-                csv_rows.append([elapsed, "", "", "memcached_started"])
+        print("Waiting for QEMUUUUUUUU")
+        qemu_proc = find_qemu_proc_by_port("11211")
+        if not qemu_proc:
+            buffered_print("QEMU not found.")
+            kraft_proc.kill()
+            return
 
-            if proc.poll() is None: # poll return None if process still running
-                try:
-                    stats = proc_qemu.cpu_percent(interval=0.1), proc_qemu.memory_info().rss // 1024 # proc_qemu made global in run_and_monitor_nginx(
-                    csv_rows.append([elapsed, stats[0], stats[1], "running"])
-                except Exception: # passing because logically and technically kraft cannot exit before the app and qemu 
-                    pass
+        qemu_start = time.time()
+        qemu_pid = qemu_proc.pid
+        buffered_print(f"QEMU started after +{round(qemu_start - kraft_start, 3)}s (PID: {qemu_pid})")
 
-    except KeyboardInterrupt:
-        nginx_stopped = time.time()
-        elapsed = round(nginx_stopped - start_time, 3)
-        buffered_print(f"MEMCACHED Stopped via Ctrl+C at +{elapsed:.2f}s")
-        csv_rows.append([elapsed, "", "", "nginx_stopped"])
+        print("Waiting for Memcached to accept connections")
+        memcached_ready = wait_for_memcached_ready("127.0.0.1", 11211)
+        if not memcached_ready:
+            buffered_print("MEmcached did not start in time.")
+            startup_time = "timeout"
+        else:
+            startup_time = round(memcached_ready - qemu_start, 3)
+            print(f"Memcached ready after +{startup_time}s")
+            buffered_print(f"Memcached startup time {startup_time}s")
 
-    finally:
-        proc.stdout.close()
+            start_time = memcached_ready
+            monitor_thread = threading.Thread(
+                target=monitor_resource_usage_live,
+                args=(qemu_proc, usage_log, stop_event),
+                daemon=True
+            )
+            monitor_thread.start()
 
-    return csv_rows, nginx_started, nginx_stopped
+        print("Memcached is running. Press ctrl+c to stop the unikernel and exit.")
 
-def print_process_tree(pid, indent=""):
-    try:
-        proc = psutil.Process(pid)
-        print(f"{indent}{proc.pid}: {' '.join(proc.cmdline())}")
-        for child in proc.children(recursive=False):
-            print_process_tree(child.pid, indent + "    ")
-    except (psutil.NoSuchProcess, psutil.AccessDenied):
-        pass
+        while kraft_proc.poll() is None:
+            time.sleep(1)
 
-def run_and_monitor_nginx():
-    buffered_print("Starting the Unikraft unikernel")
-    start_time = time.time()
-    
-    kraft_proc = subprocess.Popen(
-        ["kraft", "run", "--log-level", "debug", "--log-type", "basic", "-p", "11211:11211", "--plat", "qemu", "--arch", "x86_64", "."],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT
-    )
-
-    buffered_print("Waiting for QEMU to start...")
-    time.sleep(3)  # Give QEMU time to spawn
-
-    qemu_proc = find_qemu_proc_by_port("11211")
-    if not qemu_proc:
-        print("Could not find the QEMU process.")
-        kraft_proc.kill()
-        return
-
-    buffered_print(f"QEMU PID: {qemu_proc.pid}")
-    print_process_tree(kraft_proc.pid)
-
-    global proc_qemu
-    proc_qemu = qemu_proc
-    print("CMD:", ' '.join(qemu_proc.cmdline()))    
-
-    # Monitoring the kraft process and collecting metrics
-    csv_rows, nginx_start, nginx_end = monitor_process(kraft_proc, start_time)
-
-    kraft_proc.wait()
-    end_time = time.time()
-
-    with open(LOG_FILE, "a", newline='') as log_file:
-        csv_writer = csv.writer(log_file)
-        csv_writer.writerow(["Time Elapsed", "CPU (%)", "Memory (KB)", "Event"])
-        csv_writer.writerows(csv_rows)
-
-
-
-    buffered_print("QEMU ended")
-    buffered_print(f"Boot Time: {round(nginx_start - start_time, 3) if nginx_start else 'N/A'}s")
-    buffered_print(f"Total Runtime: {round(end_time - start_time, 3)}s")
-
-    if nginx_end:
-        buffered_print(f"MEMCACHED lifetime: {round(nginx_end - nginx_start, 3)}s")
-
-    with open(TEED_LOG_FILE, "a") as log_file:
-        for line in full_log_lines:
-            log_file.write(line + "\n")
+    except Exception as e:
+        buffered_print(f"Exception occurred: {e}")
+        cleanup()
 
 if __name__ == "__main__":
-    run_and_monitor_nginx()
+    run_and_monitor_memcached()
