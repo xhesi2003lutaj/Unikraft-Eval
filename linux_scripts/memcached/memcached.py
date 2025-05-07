@@ -129,7 +129,7 @@ def run_and_monitor_ubuntu_memcached():
 
         buffered_print("Starting Ubuntu QEMU VM with Memcached")
 
-        start_time = time.time()
+        
         vm_proc = subprocess.Popen(
             [
                 "qemu-system-x86_64",
@@ -151,6 +151,7 @@ def run_and_monitor_ubuntu_memcached():
         )
 
         buffered_print("Waiting for Memcached to accept connections")
+        start_time = time.time()
         ready_time = wait_for_memcached_ready("127.0.0.1", 11211, timeout=30)
 
         if ready_time:
