@@ -150,9 +150,38 @@ def run_and_monitor_ubuntu_memcached():
             preexec_fn=os.setsid
         )
 
-        buffered_print("Waiting for Memcached to accept connections")
+        uffered_print("Waiting for QEMU process to start...")
+
+
+        qemu_proc = None
+        qemu_timeout = time.time() + 10  
+        while time.time() < qemu_timeout:
+            qemu_proc = next((p for p in psutil.process_iter(['pid', 'name', 'cmdline']) 
+                              if p.info['name'] and 'qemu-system-x86_64' in p.info['name']), None)
+            if qemu_proc:
+                break
+            time.sleep(0.1)
+        
+        if not qemu_proc:
+            buffered_print("Couldn't find QEMU process")
+            return
+        
         start_time = time.time()
+        buffered_print(f"QEMU process detected (PID={qemu_proc.pid}). Start time recorded.")
+        
+
+        monitor_thread = threading.Thread(
+            target=monitor_resource_usage_live,
+            args=(qemu_proc, usage_log, stop_event),
+            daemon=True
+        )
+        monitor_thread.start()
+        print("Memcached is running. Press ctrl+c to stop and exit.")
+        
+
+        buffered_print("Waiting for Memcached to accept connections...")
         ready_time = wait_for_memcached_ready("127.0.0.1", 11211, timeout=30)
+
 
         if ready_time:
             startup_time = round(ready_time - start_time, 3)
@@ -161,20 +190,6 @@ def run_and_monitor_ubuntu_memcached():
             buffered_print("Memcached did not start in time")
             startup_time = "timeout"
 
-        time.sleep(1)
-        qemu_proc = next((p for p in psutil.process_iter(['pid', 'name', 'cmdline']) if 'qemu-system-x86_64' in p.info['name']), None)
-        if not qemu_proc:
-            buffered_print("Couldn't find QEMU process")
-        else:
-            buffered_print(f"QEMU PID: {qemu_proc.pid}")
-            monitor_thread = threading.Thread(
-                target=monitor_resource_usage_live,
-                args=(qemu_proc, usage_log, stop_event),
-                daemon=True
-            )
-            monitor_thread.start()
-            print("Memcached is running. Press ctrl+c to stop and exit.")
-            vm_proc.wait()
 
     except Exception as e:
         buffered_print(f"Exception occurred: {e}")
