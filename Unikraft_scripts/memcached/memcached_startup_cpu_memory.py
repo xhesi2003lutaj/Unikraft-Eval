@@ -48,7 +48,7 @@ def wait_for_memcached_ready(host="127.0.0.1", port=11211, timeout=15):
             time.sleep(0.1)
     return None
 
-def monitor_resource_usage_live(proc, usage_log, stop_event, interval=5):
+def monitor_resource_usage_live(proc, usage_log, stop_event, interval=1):
     proc.cpu_percent(interval=None)  # warm-up call
     log_lines = ["Time Elapsed,CPU (%),Memory (KB)\n"]
     while not stop_event.is_set() and proc.is_running():
@@ -136,23 +136,43 @@ def run_and_monitor_memcached():
         qemu_pid = qemu_proc.pid
         buffered_print(f"QEMU started after +{round(qemu_start - kraft_start, 3)}s (PID: {qemu_pid})")
 
+        # print("Waiting for Memcached to accept connections")
+        # memcached_ready = wait_for_memcached_ready("127.0.0.1", 11211)
+        # if not memcached_ready:
+        #     buffered_print("MEmcached did not start in time.")
+        #     startup_time = "timeout"
+        # else:
+        #     startup_time = round(memcached_ready - qemu_start, 3)
+        #     print(f"Memcached ready after +{startup_time}s")
+        #     buffered_print(f"Memcached startup time {startup_time}s")
+
+        #     start_time = memcached_ready
+        #     monitor_thread = threading.Thread(
+        #         target=monitor_resource_usage_live,
+        #         args=(qemu_proc, usage_log, stop_event),
+        #         daemon=True
+        #     )
+        #     monitor_thread.start()
+        # Start resource monitoring immediately after QEMU is detected
+        start_time = time.time()
+        monitor_thread = threading.Thread(
+            target=monitor_resource_usage_live,
+            args=(qemu_proc, usage_log, stop_event),
+            daemon=True
+        )
+        monitor_thread.start()
+        buffered_print("Started resource monitoring immediately after QEMU detection.")
+
+        # Then wait for Memcached to be ready
         print("Waiting for Memcached to accept connections")
         memcached_ready = wait_for_memcached_ready("127.0.0.1", 11211)
         if not memcached_ready:
-            buffered_print("MEmcached did not start in time.")
+            buffered_print("Memcached did not start in time.")
             startup_time = "timeout"
         else:
             startup_time = round(memcached_ready - qemu_start, 3)
             print(f"Memcached ready after +{startup_time}s")
             buffered_print(f"Memcached startup time {startup_time}s")
-
-            start_time = memcached_ready
-            monitor_thread = threading.Thread(
-                target=monitor_resource_usage_live,
-                args=(qemu_proc, usage_log, stop_event),
-                daemon=True
-            )
-            monitor_thread.start()
 
         print("Memcached is running. Press ctrl+c to stop the unikernel and exit.")
 

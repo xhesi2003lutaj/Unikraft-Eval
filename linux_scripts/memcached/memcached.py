@@ -4,7 +4,6 @@ import time
 import os
 import csv
 import socket
-import shlex
 import threading
 import signal
 
@@ -14,8 +13,10 @@ DETAILED_LOG_FILE = os.path.join(LOG_DIR, "ubuntu_memcached_metrics.csv")
 SUMMARY_LOG_FILE = os.path.join(LOG_DIR, "metrics_summary.csv")
 TEED_LOG_FILE = os.path.join(LOG_DIR, "ubuntu_full_output.log")
 CPU_LOG_FILE = os.path.join(LOG_DIR, "cpu_usage_ubuntu.log")
+STARTUP_TIMES_FILE = os.path.join(LOG_DIR, "startup_times.txt")  # New
 
 full_log_lines = []
+start_time = None  # Will be set to the monitoring start time
 
 def buffered_print(message):
     print(message)
@@ -36,21 +37,15 @@ def disable_host_memcached():
             buffered_print("Port 11211 is in use, trying to stop host memcached")
             subprocess.run(["sudo", "systemctl", "stop", "memcached"], check=False)
             time.sleep(2)
-
             if port_in_use(11211):
-                buffered_print("Trying to kill process using port 11211")
                 result = subprocess.run(["sudo", "lsof", "-t", "-i:11211"], capture_output=True, text=True)
-                pids = result.stdout.strip().splitlines()
-                for pid in pids:
+                for pid in result.stdout.strip().splitlines():
                     buffered_print(f"Killing by pid {pid}")
                     subprocess.run(["sudo", "kill", "-9", pid], check=False)
-                    print("u aygjesua")
                 time.sleep(1)
-
             if port_in_use(11211):
                 buffered_print("11211 is still in use after all attempts")
                 return False
-
             buffered_print("11211 now free.")
         else:
             buffered_print("11211 was free from the beginning")
@@ -69,7 +64,7 @@ def wait_for_memcached_ready(host="127.0.0.1", port=11211, timeout=20):
             time.sleep(0.1)
     return None
 
-def monitor_resource_usage_live(proc, usage_log, stop_event, interval=5):
+def monitor_resource_usage_live(proc, usage_log, stop_event, interval=1):
     proc.cpu_percent(interval=None)
     log_lines = ["Time Elapsed,CPU (%),Memory (KB)\n"]
     while not stop_event.is_set() and proc.is_running():
@@ -77,21 +72,23 @@ def monitor_resource_usage_live(proc, usage_log, stop_event, interval=5):
         mem = proc.memory_info().rss // 1024
         elapsed = round(time.time() - start_time, 2)
         log_lines.append(f"{elapsed},{cpu},{mem}\n")
-        usage_log.append([elapsed, cpu, mem, "running"])
+        usage_log.append([elapsed, cpu, mem])
     with open(CPU_LOG_FILE, "w") as cpu_log:
         cpu_log.writelines(log_lines)
 
 def run_and_monitor_ubuntu_memcached():
     global start_time
     vm_proc = None
-    startup_time = None
+    qemu_proc = None
     usage_log = []
+    startup_time = None
     stop_event = threading.Event()
     end_time = None
+    monitor_thread = None
 
     def cleanup(signum=None, frame=None):
         nonlocal end_time
-        buffered_print("Interrupt signal received, cleaning up")
+        buffered_print("Interrupt signal received, cleaning up...")
         stop_event.set()
         if vm_proc:
             try:
@@ -104,17 +101,17 @@ def run_and_monitor_ubuntu_memcached():
         with open(DETAILED_LOG_FILE, "a", newline='') as f:
             writer = csv.writer(f)
             if os.stat(DETAILED_LOG_FILE).st_size == 0:
-                writer.writerow(["Time Elapsed", "CPU (%)", "Memory (KB)", "Event"])
+                writer.writerow(["Time Elapsed", "CPU (%)", "Memory (KB)"])
             if startup_time and isinstance(startup_time, float):
-                writer.writerow([startup_time, "", "", "memcached_started"])
-            writer.writerows(usage_log)
+                for entry in usage_log:
+                    writer.writerow(entry)
 
         tee_print_all()
-        duration = round(end_time - start_time, 3)
+        duration = round(end_time - qemu_start, 3)
         buffered_print(f"QEMU duration: {duration}s")
         if usage_log:
-            cpu_avg = round(sum(cpu for _, cpu, _, _ in usage_log) / len(usage_log), 2)
-            mem_avg = round(sum(mem for _, _, mem, _ in usage_log) / len(usage_log), 2)
+            cpu_avg = round(sum(cpu for _, cpu, _ in usage_log) / len(usage_log), 2)
+            mem_avg = round(sum(mem for _, _, mem in usage_log) / len(usage_log), 2)
             buffered_print(f"Avg CPU: {cpu_avg}%")
             buffered_print(f"Avg Memory: {mem_avg} KB")
         exit(0)
@@ -127,9 +124,9 @@ def run_and_monitor_ubuntu_memcached():
             buffered_print("Aborting due to port conflict.")
             return
 
-        buffered_print("Starting Ubuntu QEMU VM with Memcached")
+        buffered_print("Starting Ubuntu QEMU VM with Memcached...")
+        kraft_start = time.time()
 
-        
         vm_proc = subprocess.Popen(
             [
                 "qemu-system-x86_64",
@@ -150,25 +147,17 @@ def run_and_monitor_ubuntu_memcached():
             preexec_fn=os.setsid
         )
 
-        uffered_print("Waiting for QEMU process to start...")
+        buffered_print("Waiting for QEMU process to appear...")
+        qemu_proc = next((p for p in psutil.process_iter(['pid', 'name', 'cmdline'])
+                          if 'qemu-system-x86_64' in p.info['name']), None)
 
-
-        qemu_proc = None
-        qemu_timeout = time.time() + 10  
-        while time.time() < qemu_timeout:
-            qemu_proc = next((p for p in psutil.process_iter(['pid', 'name', 'cmdline']) 
-                              if p.info['name'] and 'qemu-system-x86_64' in p.info['name']), None)
-            if qemu_proc:
-                break
-            time.sleep(0.1)
-        
         if not qemu_proc:
             buffered_print("Couldn't find QEMU process")
             return
-        
-        start_time = time.time()
-        buffered_print(f"QEMU process detected (PID={qemu_proc.pid}). Start time recorded.")
-        
+
+        qemu_start = time.time()
+        start_time = qemu_start  # Start monitoring from same point as Unikraft script
+        buffered_print(f"QEMU started after +{round(qemu_start - kraft_start, 3)}s (PID: {qemu_proc.pid})")
 
         monitor_thread = threading.Thread(
             target=monitor_resource_usage_live,
@@ -176,20 +165,24 @@ def run_and_monitor_ubuntu_memcached():
             daemon=True
         )
         monitor_thread.start()
-        print("Memcached is running. Press ctrl+c to stop and exit.")
-        
+        buffered_print("Started resource monitoring immediately after QEMU detection.")
 
         buffered_print("Waiting for Memcached to accept connections...")
         ready_time = wait_for_memcached_ready("127.0.0.1", 11211, timeout=30)
 
-
         if ready_time:
-            startup_time = round(ready_time - start_time, 3)
+            startup_time = round(ready_time - qemu_start, 3)
             buffered_print(f"Memcached is ready at +{startup_time}s")
+
+            # Append to startup_times.txt
+            with open(STARTUP_TIMES_FILE, "a") as f:
+                f.write(f"{startup_time}\n")
         else:
-            buffered_print("Memcached did not start in time")
+            buffered_print("Memcached did not start in time.")
             startup_time = "timeout"
 
+        print("Memcached is running. Press Ctrl+C to stop and exit.")
+        vm_proc.wait()
 
     except Exception as e:
         buffered_print(f"Exception occurred: {e}")
