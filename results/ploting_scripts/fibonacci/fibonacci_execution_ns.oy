@@ -1,0 +1,79 @@
+import os
+import re
+import matplotlib.pyplot as plt
+import pandas as pd
+
+# Files to process
+files = [
+	'fibonacci_5_ubuntu.txt',
+    'fibonacci_5_unikraft.txt',
+    'fibonacci_30_ubuntu.txt',
+    'fibonacci_30_unikraft.txt',
+    # 'fibonacci_50_ubuntu.txt',
+    # 'fibonacci_50_unikraft.txt'
+]
+
+# Store results
+results = []
+
+# Regex pattern to extract time in nanoseconds
+pattern = re.compile(r"Elapsed time:\s+(\d+)\s+ns")
+
+# Process each file
+for file in files:
+    with open(file, 'r') as f:
+        times_ns = []
+        for line in f:
+            match = pattern.search(line)
+            if match:
+                times_ns.append(int(match.group(1)))
+
+        if times_ns:
+            avg_ns = sum(times_ns) / len(times_ns)
+            parts = file.replace('.txt', '').split('_')
+            fib_input = parts[1]
+            platform = parts[2]
+            results.append({
+                'Fibonacci': fib_input,
+                'Platform': platform,
+                'AverageTime_ns': avg_ns
+            })
+
+# Create DataFrame
+df = pd.DataFrame(results)
+
+# Prepare for grouped bar chart
+fib_inputs = sorted(df['Fibonacci'].unique(), key=int)
+platforms = ['ubuntu', 'unikraft']
+bar_width = 0.35
+x = range(len(fib_inputs))
+
+plt.figure(figsize=(10, 6))
+
+# Plot bars for each platform
+for i, platform in enumerate(platforms):
+    times = []
+    for fib in fib_inputs:
+        match = df[(df['Fibonacci'] == fib) & (df['Platform'] == platform)]
+        times.append(match['AverageTime_ns'].values[0] if not match.empty else 0)
+
+    offset = [pos + (i - 0.5) * bar_width for pos in x]
+    bars = plt.bar(offset, times, width=bar_width, label=platform.capitalize())
+
+    # Add labels on top of each bar
+    for rect in bars:
+        height = rect.get_height()
+        plt.text(rect.get_x() + rect.get_width() / 2, height + (max(times) * 0.01),
+                 f'{int(height):,}', ha='center', va='bottom', fontsize=8)
+
+# Final chart formatting
+plt.xlabel('Fibonacci Sequence')
+plt.ylabel('Average Time (ns)')
+plt.title('Average Execution Time of Fibonacci in C Code (Nanoseconds)')
+plt.xticks(ticks=x, labels=fib_inputs)
+plt.legend()
+plt.grid(axis='y', linestyle='--', alpha=0.7)
+plt.tight_layout()
+plt.savefig('fibonacci_times.png', dpi=300)
+plt.show()
+

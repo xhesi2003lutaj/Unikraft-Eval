@@ -1,0 +1,6 @@
+Elapsed time: 515699059570 ns
+Elapsed time: 510955508916 ns
+Elapsed time: 506068878948 ns
+Elapsed time: 503430232048 ns
+Elapsed time: 507491897132 ns
+
