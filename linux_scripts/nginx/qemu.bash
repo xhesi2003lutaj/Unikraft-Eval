@@ -1,5 +1,5 @@
 qemu-system-x86_64 \
-  -m 128M \
+  -m 64M \
   -smp cpus=1,threads=1,sockets=1 \
   -cpu host,+x2apic,-pmu \
   -netdev user,id=net0,hostfwd=tcp::8080-:80 \
