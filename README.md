@@ -27,10 +27,8 @@ The goal of this project is to investigate the performance of applications runni
 
 ## Aimed apps for testing
     1- Nginx  natively build and with kraft
-    2- Hugo 
-    3- C/C++ application
-    4- Redis, the image pulled from the cloud has an issue with threading, build natively cannot initialize the ELF parse => test with docker 
-    5- Memcached
+    2- C/C++ application
+    3- Memcached
 
 ## Setting up environment for running benchmarks on Linux
 ### Memcached (If memtier_benchmark is not available by default on your Linux distribution)
