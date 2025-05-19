@@ -20,6 +20,7 @@ Then export the environment variable so kraft knows where to find it:
         2. export KRAFTKIT_BUILDKIT_HOST=docker-container://buildkit
 
 ## Directory Structure
+```text
 |--------liux_scripts\
 |                     |----fibonacci\
 |                     |              |---fibonacci.c
@@ -66,7 +67,7 @@ Then export the environment variable so kraft knows where to find it:
 |-------kraft_run.bash
 |-------READMNE.md
 
-
+```
 
 
 ## Evaluation Goals
