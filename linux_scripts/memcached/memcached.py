@@ -13,10 +13,10 @@ DETAILED_LOG_FILE = os.path.join(LOG_DIR, "ubuntu_memcached_metrics.csv")
 SUMMARY_LOG_FILE = os.path.join(LOG_DIR, "metrics_summary.csv")
 TEED_LOG_FILE = os.path.join(LOG_DIR, "ubuntu_full_output.log")
 CPU_LOG_FILE = os.path.join(LOG_DIR, "cpu_usage_ubuntu.log")
-STARTUP_TIMES_FILE = os.path.join(LOG_DIR, "startup_times.txt")  # New
+STARTUP_TIMES_FILE = os.path.join(LOG_DIR, "startup_times.txt")  
 
 full_log_lines = []
-start_time = None  # Will be set to the monitoring start time
+start_time = None  # will be set to the monitoring start time
 
 def buffered_print(message):
     print(message)
@@ -88,7 +88,7 @@ def run_and_monitor_ubuntu_memcached():
 
     def cleanup(signum=None, frame=None):
         nonlocal end_time
-        buffered_print("Interrupt signal received, cleaning up...")
+        buffered_print("Interrupt signal received, cleaning up")
         stop_event.set()
         if vm_proc:
             try:
@@ -124,7 +124,7 @@ def run_and_monitor_ubuntu_memcached():
             buffered_print("Aborting due to port conflict.")
             return
 
-        buffered_print("Starting Ubuntu QEMU VM with Memcached...")
+        buffered_print("Starting Ubuntu QEMU VM with Memcached")
         kraft_start = time.time()
 
         vm_proc = subprocess.Popen(
@@ -147,7 +147,7 @@ def run_and_monitor_ubuntu_memcached():
             preexec_fn=os.setsid
         )
 
-        buffered_print("Waiting for QEMU process to appear...")
+        buffered_print("Waiting for QEMU process to appear")
         qemu_proc = next((p for p in psutil.process_iter(['pid', 'name', 'cmdline'])
                           if 'qemu-system-x86_64' in p.info['name']), None)
 
@@ -167,7 +167,7 @@ def run_and_monitor_ubuntu_memcached():
         monitor_thread.start()
         buffered_print("Started resource monitoring immediately after QEMU detection.")
 
-        buffered_print("Waiting for Memcached to accept connections...")
+        buffered_print("Waiting for Memcached to accept connections")
         ready_time = wait_for_memcached_ready("127.0.0.1", 11211, timeout=30)
 
         if ready_time:

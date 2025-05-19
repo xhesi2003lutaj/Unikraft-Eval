@@ -20,6 +20,54 @@ Then export the environment variable so kraft knows where to find it:
         2. export KRAFTKIT_BUILDKIT_HOST=docker-container://buildkit
 
 ## Directory Structure
+|--------liux_scripts\
+|                     |----fibonacci\
+|                     |              |---fibonacci.c
+|                     |----memcached\
+|                     |             |---benchmark.py
+|                     |             |---benchmarks.bash
+|                     |             |---memcached.py
+|                     |             |---qemu.bash
+|                     |-------nginx\
+|                                   |---benchmark.py
+|                                   |---nginx.py
+|                                   |---qemu.bash                                  |
+|-------nginx_manual\
+|                    |----nginx.zip
+|                    |----.config   
+|                    |----Makefile
+|                    |----qemu-x64_64-9pfs
+|                    |----start_nginx.sh  
+|
+|-------results-----\
+|                    |----fibonacci\
+|                    |              |...
+|                    |----memcached\
+|                    |              |...
+|                    |----nginx\
+|                    |              |...
+|                    |----nginx_manual\
+|                    |              |...
+|                    |----plotting_scripts\
+|                    |              |...
+|
+|-------ubuntu_minimal_cloud_image\
+|                                  |----meta-data
+|                                  |----seed_iso_cloud_image.bash
+|                                  |----user_data
+|
+|-------Unikraft_scripts\
+|                        |----fibonacci\
+|                        |              |...
+|                        |----memcached\
+|                        |              |...
+|                        |----nginx\
+|                        |          |...
+|-------kraft_run.bash
+|-------READMNE.md
+
+
+
 
 ## Evaluation Goals
 
